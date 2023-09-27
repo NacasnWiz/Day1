@@ -6,15 +6,20 @@ public class Grenade : MonoBehaviour
 {
     [SerializeField]
     private float throwForce;
+    [SerializeField]
+    private Rigidbody rb;
 
     public Vector3 throwDir;
 
+    [Header ("Explosion")]
     [SerializeField]
     private float explosionRadius;
     [SerializeField]
     private float explosionForce;
+
     [SerializeField]
-    private Rigidbody rb;
+    private LayerMask layersToIgnore;
+
 
 
     // Start is called before the first frame update
@@ -31,8 +36,10 @@ public class Grenade : MonoBehaviour
 
     private void OnDestroy()
     {
-        Collider[] colliders = Physics.OverlapSphere(transform.position, explosionRadius, -1);
-        foreach(Collider collider in colliders)
+        Collider[] colliders = Physics.OverlapSphere(transform.position, explosionRadius, ~layersToIgnore);
+        //On peut aussi mettre '~8' à la place de '~(1 << LayerMask.NameToLayer("Player"))'
+
+        foreach (Collider collider in colliders)
         {
             Rigidbody other = collider.GetComponent<Rigidbody>();
             if (other)
