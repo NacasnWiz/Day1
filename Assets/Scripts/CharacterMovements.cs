@@ -7,26 +7,22 @@ public class CharacterMovement : MonoBehaviour
 
     [SerializeField]
     private Camera fpsCamera;
-    [SerializeField]
     private float moveSpeed = 5f;
     [SerializeField]
-    private float sensitivityX = 20f, sensitivityY = 20f;
+    private int sensitivityX = 250, sensitivityY = -250;
     [SerializeField]
     private Rigidbody rb;
     [SerializeField]
     private float jumpForce = 200f;
 
-    [SerializeField]
     private bool isSprinting = false;
     [SerializeField]
     private float moveSpeedSprint = 10f;
     [SerializeField]
     private float moveSpeedBase = 5f;
-    [SerializeField]
-    private float stamina = 100f;
+    private float currentStamina = 100f;
     [SerializeField]
     private float staminaMax = 100f;
-    [SerializeField]
     private bool isExhausted = false;
     [SerializeField]
     private float staminaDepletionRate = 20f;
@@ -37,13 +33,13 @@ public class CharacterMovement : MonoBehaviour
     [SerializeField]
     private float staminaReplenishRate = 20f;
 
+    private Vector3 velocityXY;
+
     [SerializeField]
     private int grenadeFireRate = 2;
-    [SerializeField]
     private float grenadeTimer = 0f;
     [SerializeField]
     private int grenadeMagazineMaxCapacity = 5;
-    [SerializeField]
     private int grenadeCurrentAmmo = 5;
     [SerializeField]
     private int grenadeAmmoPerShot = 1;
@@ -53,30 +49,31 @@ public class CharacterMovement : MonoBehaviour
 
     [SerializeField]
     private LayerMask layersToIgnore;
-    [SerializeField]
     private WeaponSO currentWeapon;
-    [SerializeField]
     private WeaponSO.ShootModes currentShootMode;
-    [SerializeField]
     private int currentShootModeIndex = 0;
 
-    [SerializeField]
-    private float velocity;
-
-    [SerializeField]
     private float shootTimer = 0f;
     [SerializeField]
     private float currentFireRate;
     [SerializeField]
     private bool isInSemiBurst = false;
-    [SerializeField]
+
     private int bulletsFiredSemiBurst = 0;
     [SerializeField]
-    private int currentWeaponAmmo;
-    [SerializeField]
+    public int currentWeaponAmmo;//public for the HUD
+
     private float reloadTimer = 0f;
     [SerializeField]
     private bool isReloading = false;
+
+    private Rigidbody hitRigidbodyGG = null;
+    private Vector3 targetPosition;
+    private float basePullForce = 10f;
+    private float pullDistance = 10f;
+
+
+    //private InGameHud HUD;//Double dépendance pas top
 
 
     // Start is called before the first frame update
@@ -89,66 +86,150 @@ public class CharacterMovement : MonoBehaviour
 
         if(currentWeapon != null)
         {
-            setCurrentValuesToCurrentWeapon();
+            SetCurrentValuesToCurrentWeapon();
         }
+
+        sensitivityX = PlayerPrefs.GetInt("Sensitivity");
+        sensitivityY = - PlayerPrefs.GetInt("Sensitivity");
+
+        Time.timeScale = 1f;
     }
 
     // Update is called once per frame
-    void Update()
+    void Update()//I want every input inside Update() method.
     {
-        moveCamera();
-        moveCharacter();
-        actualiseStamina();
+
+        MoveCamera();
+        RotateCharacter();
+        MoveCharacter();
+        ActualiseStamina();
         //Debug.Log("stamina = " + stamina);
 
-        if(canShootGrenade())
-        {
-            shootGrenade();//handles input, which is shit
-        }
         grenadeTimer += Time.deltaTime;
-        reloadAll();
+        //shootGrenade();//handles input, which is shit architechture
 
-        switchShootMode();
+        ReloadAll();
+
+        SwitchShootMode();
+
         shootTimer += Time.deltaTime;
-        if (canShootWeapon())
+        ShootWeapon(currentShootMode);
+
+
+        if (Input.GetMouseButtonDown(1))
         {
-            shootWeapon(currentShootMode);
+            GravityGunGrab();
+        }
+
+
+        if (Input.GetMouseButton(1))
+        {
+            if(hitRigidbodyGG != null)
+            {
+                GravityGunPull();
+            }
+        }
+
+        if (Input.GetMouseButton(2))
+        {
+            if (hitRigidbodyGG != null)
+            {
+                GravityGunFusRohDah();
+                GravityGunRelease();
+            }
+        }
+
+        if (Input.GetMouseButtonUp(1))
+        {
+            if (hitRigidbodyGG != null)
+            {
+                GravityGunRelease();
+            }
+        }
+
+    }
+
+
+    private void GravityGunGrab()
+    {
+        if (Physics.Raycast(new Ray(transform.position, fpsCamera.transform.forward), out RaycastHit hit, Mathf.Infinity, ~(1 - LayerMask.NameToLayer("Player"))))
+        {
+            hitRigidbodyGG = hit.rigidbody;
+            if (hitRigidbodyGG != null)
+            {
+                hitRigidbodyGG.useGravity = false;
+                pullDistance = (hitRigidbodyGG.transform.position - transform.position).magnitude;
+            }
         }
     }
+
+    private void GravityGunPull()
+    {
+        pullDistance += Input.GetAxis("Mouse ScrollWheel") * 10f;
+        pullDistance = Mathf.Clamp(pullDistance, 2f, 30f);
+
+        targetPosition = fpsCamera.transform.forward * pullDistance + fpsCamera.transform.position;
+        Vector3 objectToTarget = targetPosition - hitRigidbodyGG.transform.position;
+        //Vector3 objectToTargetNormalized = objectToTarget.normalized;
+        hitRigidbodyGG.velocity = (objectToTarget * basePullForce);
+    }
+
+    private void GravityGunRelease()
+    {
+        hitRigidbodyGG.useGravity = true;
+        hitRigidbodyGG = null;
+    }
+
+    private void GravityGunFusRohDah()
+    {
+        hitRigidbodyGG.AddForce(fpsCamera.transform.forward * 100f, ForceMode.Impulse);
+    }
+
 
     private void OnTriggerEnter(Collider other)
     {
         if(other.GetComponent<WeaponModel>() != null)
         {
-            currentWeapon = other.GetComponent<WeaponModel>().weaponSO;
+            EquipWeapon(other.GetComponent<WeaponModel>());//Voir si possible d'éviter le double .GetComponent<>
             Destroy(other.gameObject);
-            Debug.Log("Picked up a " + currentWeapon.weaponName);
-            setCurrentValuesToCurrentWeapon();
         }
     }
 
-    private void setCurrentValuesToCurrentWeapon()
+    private void EquipWeapon(WeaponModel weapon)
     {
-        currentWeaponAmmo = currentWeapon.magazineSize;
+        if(weapon != null)
+        {
+            currentWeapon = weapon.weaponSO;
+            Debug.Log("Picked up a " + currentWeapon.weaponName);
+            currentWeaponAmmo = weapon.currentAmmo;
+            InGameHud.instance.UpdateWeaponAmmo(currentWeaponAmmo);
+            SetCurrentValuesToCurrentWeapon();
+            InGameHud.instance.UpdateNewWeapon(weapon.weaponSO);
+        }
+    }
+
+    private void SetCurrentValuesToCurrentWeapon()
+    {
         currentShootMode = currentWeapon.modes[0];
         currentFireRate = currentWeapon.fireRate;
     }
 
-
-    private void shootWeapon(WeaponSO.ShootModes mode)
+    private void ShootWeapon(WeaponSO.ShootModes mode)
     {
-        switch (mode)
+        if (!CanShootWeapon())
+        { return; }
+            switch (mode)
         {
             case WeaponSO.ShootModes.FULL:
-                shootWeaponFULL();
+                ShootWeaponFULL();
                 break;
 
             case WeaponSO.ShootModes.BURST:
-                shootWeaponBURST();
+                ShootWeaponBURST();
                 break;
 
             case WeaponSO.ShootModes.SEMI:
-                shootWeaponSEMI();
+                ShootWeaponSEMI();
                 break;
 
             default:
@@ -156,47 +237,46 @@ public class CharacterMovement : MonoBehaviour
         }
     }
 
-    private void shootWeaponFULL()
+    private void ShootWeaponFULL()
     {
         if (Input.GetMouseButton(0))
         {
-            fireBullet();
+            FireBullet();
         }
     }
 
-    private void shootWeaponBURST()
+    private void ShootWeaponBURST()
     {
         if (Input.GetMouseButtonDown(0))
         {
-            fireBullet();
+            FireBullet();
         }
     }
 
-    private void shootWeaponSEMI()
+    private void ShootWeaponSEMI()
     {
         if (isInSemiBurst)
         {
             if (bulletsFiredSemiBurst < currentWeapon.numberOfRoundsSemi)
             {
-                shootWeaponInSemiBurst();
+                ShootWeaponInSemiBurst();
             }
             else
             {
-                exitSemiBurst();
+                ExitSemiBurst();
             }
         }
         else
         {
             if (Input.GetMouseButtonDown(0))
             {
-                enterSemiBurst();
-                shootWeaponInSemiBurst();
+                EnterSemiBurst();
+                ShootWeaponInSemiBurst();
             }
         }
     }
 
-
-    private bool canShootWeapon()
+    private bool CanShootWeapon()
     {
         if (shootTimer < 1f / currentFireRate)
         {
@@ -210,7 +290,7 @@ public class CharacterMovement : MonoBehaviour
         return currentWeaponAmmo > 0;
     }
 
-    private void enterSemiBurst()
+    private void EnterSemiBurst()
     {
         if(!isInSemiBurst)
         {
@@ -219,13 +299,13 @@ public class CharacterMovement : MonoBehaviour
         }
     }
 
-    private void shootWeaponInSemiBurst()
+    private void ShootWeaponInSemiBurst()
     {
-        fireBullet();
+        FireBullet();
         ++bulletsFiredSemiBurst;
     }
 
-    private void exitSemiBurst()
+    private void ExitSemiBurst()
     {
         if(isInSemiBurst)
         {
@@ -235,23 +315,28 @@ public class CharacterMovement : MonoBehaviour
         }
     }
 
-    private void fireBullet()
+    private void FireBullet()
     {
         Ray ray = new Ray(fpsCamera.transform.position, fpsCamera.transform.forward);
         if (Physics.Raycast(ray, out RaycastHit hit, 150f, ~layersToIgnore))
         {
+            Mannequin other = hit.collider.GetComponent<Mannequin>();
+            if (other != null)
+            {
+                other.takeDamage((int)currentWeapon.damages);
+            }
             Debug.Log(hit.collider.gameObject.name);
         }
-        useWeaponAmmo();
+        UseWeaponAmmo();
         shootTimer = 0;
     }
 
-    private void useWeaponAmmo()
+    private void UseWeaponAmmo()
     {
-        --currentWeaponAmmo;
+        InGameHud.instance.UpdateWeaponAmmo(--currentWeaponAmmo);
     }
 
-    private void switchShootMode()
+    private void SwitchShootMode()
     {
         if (Input.GetKeyDown(KeyCode.T))
         {
@@ -262,11 +347,11 @@ public class CharacterMovement : MonoBehaviour
         
     }
 
-    private void shootGrenade()
+    private void ShootGrenade()
     {
         if (Input.GetMouseButton(1))
         {
-            if (!canShootGrenade())
+            if (!CanShootGrenade())
             {
                 return;
             }
@@ -277,12 +362,12 @@ public class CharacterMovement : MonoBehaviour
 
             grenadeTimer = 0f;
 
-            useGrenadeAmmo(grenadeAmmoPerShot);
+            UseGrenadeAmmo(grenadeAmmoPerShot);
         }
         
     }
 
-    private void reloadAll()//A Refactorer
+    private void ReloadAll()
     {
         if (!isReloading)
         {
@@ -292,11 +377,12 @@ public class CharacterMovement : MonoBehaviour
                 Debug.Log("Reloaded grenades to max!\n" + "Max grenades is = " + grenadeMagazineMaxCapacity + ", current is " + grenadeCurrentAmmo);
                 currentWeaponAmmo = currentWeapon.magazineSize;
                 Debug.Log("Reloaded weapon to max!\n" + "Max ammo is = " + currentWeapon.magazineSize + ", current is " + currentWeaponAmmo);
+                InGameHud.instance.UpdateWeaponAmmo(currentWeaponAmmo);
 
                 reloadTimer = 0f;
                 isReloading = true;
 
-                exitSemiBurst();//
+                ExitSemiBurst();//
             }
         }
         else
@@ -309,7 +395,7 @@ public class CharacterMovement : MonoBehaviour
         }
     }
 
-    private bool canShootGrenade()
+    private bool CanShootGrenade()
     {
         if (isReloading)
         {
@@ -319,96 +405,95 @@ public class CharacterMovement : MonoBehaviour
         return (grenadeTimer > 1f / grenadeFireRate && grenadeCurrentAmmo > 0f);
     }
 
-    private void useGrenadeAmmo(int howMany = 1)
+    private void UseGrenadeAmmo(int howMany = 1)
     {
         grenadeCurrentAmmo -= howMany;
         Mathf.Clamp(grenadeCurrentAmmo, 0, grenadeMagazineMaxCapacity);
         Debug.Log("Current grenade ammo = " + grenadeCurrentAmmo);
     }
 
-    private void moveCamera()
+    private void MoveCamera()
     {
-        rotateCharacter();
         fpsCamera.transform.Rotate(new Vector3(Input.GetAxis("Mouse Y") * sensitivityY * Time.deltaTime, 0f, 0f));
     }
 
-    private void rotateCharacter()
+    private void RotateCharacter()
     {
         transform.Rotate(new Vector3(0f, Input.GetAxis("Mouse X") * sensitivityX * Time.deltaTime, 0f));
     }
 
-    private bool canSprint()
+    private bool CanSprint()
     {
         if (isExhausted)
         {
             return false;
         }
         
-        return stamina > 0f;
+        return currentStamina > 0f;
     }
 
-    private void moveCharacter()
+    private void MoveCharacter()
     {
-        Vector3 playerMovement = transform.forward * Input.GetAxisRaw("Vertical") + transform.right * Input.GetAxisRaw("Horizontal");
-        velocity = playerMovement.magnitude;
+        Vector3 inputs = Vector3.ClampMagnitude(new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical")), 1f);
+        SetSprinting();
+        velocityXY = transform.rotation * inputs * moveSpeed;
+        rb.velocity = new Vector3(velocityXY.x, rb.velocity.y, velocityXY.z);
 
-        setSprinting();
+        //transform.position += playerMovement.normalized * currentMoveSpeed * Time.deltaTime;        
 
-        transform.position += playerMovement.normalized * moveSpeed * Time.deltaTime;        
-        
         if (Input.GetButtonDown("Jump"))
         {
-            characterJump();
+            CharacterJump();
         }
     }
     
-    private void setSprinting()
+    private void SetSprinting()
     {
-        isSprinting = canSprint() && Input.GetKey(KeyCode.LeftShift) ? true : false;
+        isSprinting = CanSprint() && Input.GetKey(KeyCode.LeftShift) ? true : false;
         moveSpeed = isSprinting ? moveSpeedSprint : moveSpeedBase;
     }
 
-    private void characterJump()
+    private void CharacterJump()
     {
         rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
     }
 
-    private void actualiseStamina()
+    private void ActualiseStamina()
     {
-        if (isSprinting && velocity > 0)
+        if (isSprinting && velocityXY.magnitude > 0)
         {
-            useStamina();
+            UseStamina();
         }
         else
         {
-            replenishStamina();
+            ReplenishStamina();
         }
 
     }
 
-    private void useStamina()
+    private void UseStamina()
     {
-        stamina -= Time.deltaTime * staminaDepletionRate;
-        if (stamina <= 0)
+        currentStamina -= Time.deltaTime * staminaDepletionRate;
+        if (currentStamina <= 0)
         {
             isExhausted = true;
         }
-        Mathf.Clamp(stamina, 0f, staminaMax);
+        Mathf.Clamp(currentStamina, 0f, staminaMax);
     }
 
-    private void replenishStamina()
+    private void ReplenishStamina()
     {
-        staminaReplenishRate = velocity > 0 ? staminaReplenishRateMoving : staminaReplenishRateIdle;
+        staminaReplenishRate = velocityXY.magnitude > 0 ? staminaReplenishRateMoving : staminaReplenishRateIdle;
 
-        if (stamina < staminaMax)
+        if (currentStamina < staminaMax)
         {
-            stamina += Time.deltaTime * staminaReplenishRate;
+            currentStamina += Time.deltaTime * staminaReplenishRate;
         }
         else
         {
             isExhausted = false;
         }
-        Mathf.Clamp(stamina, 0f, staminaMax);
+        Mathf.Clamp(currentStamina, 0f, staminaMax);
     }
 
 }

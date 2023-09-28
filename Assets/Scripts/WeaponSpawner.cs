@@ -13,24 +13,24 @@ public class WeaponSpawner : MonoBehaviour
     {
         if(collision.gameObject.GetComponent<CharacterMovement>() != null)
         {
-            spawnRandomWeapon();
+            SpawnRandomWeapon();
         }
     }
     private void Update()
     {
         if (!currentlySpawnedWeapon)
         {
-            spawnRandomWeapon();
+            SpawnRandomWeapon();
         }
     }
 
-    private void spawnRandomWeapon()
+    private void SpawnRandomWeapon()
     {
         int index = Random.Range(0, weapons.Length);
-        spawnWeapon(index);
+        SpawnWeapon(index);
     }
 
-    private void spawnWeapon(int indexToSpawn)
+    private void SpawnWeapon(int indexToSpawn)
     {
         if (!currentlySpawnedWeapon)
         {

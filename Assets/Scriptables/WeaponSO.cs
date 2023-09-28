@@ -23,4 +23,6 @@ public class WeaponSO : ScriptableObject
     public int numberOfRoundsSemi;
     public float burstTimer;
 
+    public Sprite sprite;
+
 }
